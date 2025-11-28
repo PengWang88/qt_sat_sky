@@ -1,0 +1,16 @@
+# CMake 构建目录（整个 build 文件夹都忽略）
+build/
+# CMake 生成的中间文件
+.cmake/
+# Qt 自动生成文件
+*/autogen/
+*/CMakeFiles/
+*.ui.cpp
+*.moc
+*.qrc.cpp
+# 编译产物
+*.o
+*.so
+*.dll
+*.exe
+*.pdb
