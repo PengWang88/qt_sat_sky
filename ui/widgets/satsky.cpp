@@ -203,6 +203,53 @@ void SatSky::setupUI()
     controlLayout->addWidget(timeGroup);
     controlLayout->addWidget(satelliteGroup);
     controlLayout->addWidget(trajectoryGroup);
+    
+    // 新增：卫星过滤分组
+    QGroupBox *filterGroup = new QGroupBox("卫星过滤", m_controlArea);
+    QVBoxLayout *filterLayout = new QVBoxLayout(filterGroup);
+    
+    // 创建过滤输入框和按钮
+    QLabel *filterLabel = new QLabel("输入要过滤的卫星PRN（空格分割）:", filterGroup);
+    filterLabel->setStyleSheet("font-size: 12px; padding: 4px;");
+    
+    m_filterInput = new QLineEdit(filterGroup);
+    m_filterInput->setPlaceholderText("例如: G01 G02 C01 C02");
+    m_filterInput->setStyleSheet("QLineEdit { padding: 6px; font-size: 12px; }");
+    
+    // 创建按钮布局
+    QHBoxLayout *filterButtonLayout = new QHBoxLayout();
+    
+    m_filterButton = new QPushButton("应用过滤", filterGroup);
+    m_filterButton->setStyleSheet("QPushButton { padding: 8px; font-size: 12px; background-color: #2196F3; color: white; border: none; border-radius: 4px; } QPushButton:hover { background-color: #1976D2; }");
+    
+    QPushButton *clearFilterButton = new QPushButton("清除过滤", filterGroup);
+    clearFilterButton->setStyleSheet("QPushButton { padding: 8px; font-size: 12px; background-color: #f44336; color: white; border: none; border-radius: 4px; } QPushButton:hover { background-color: #d32f2f; }");
+    
+    filterButtonLayout->addWidget(m_filterButton);
+    filterButtonLayout->addWidget(clearFilterButton);
+    
+    // 连接过滤按钮信号
+    connect(m_filterButton, &QPushButton::clicked, this, &SatSky::onFilterSatellites);
+    connect(clearFilterButton, &QPushButton::clicked, this, [this]() {
+        if (m_filterInput) {
+            m_filterInput->clear();
+        }
+        m_filteredPRNs.clear();
+        NOVA_LOG("清除所有卫星过滤");
+        
+        // 根据当前显示模式重新显示数据
+        if (m_showTrajectory) {
+            loadAllSatelliteTrajectories();
+        } else {
+            displayCurrentEpoch();
+        }
+    });
+    filterLayout->addWidget(filterLabel);
+    filterLayout->addWidget(m_filterInput);
+    filterLayout->addLayout(filterButtonLayout);
+    
+    // 添加到控制区域
+    controlLayout->addWidget(filterGroup);
     controlLayout->addStretch(); // 添加弹性空间
 
     // 设置固定比例布局（左:右 = 7:3）
@@ -367,6 +414,49 @@ void SatSky::loadAzElData()
     displayCurrentEpoch();
 }
 
+// 卫星过滤槽函数
+void SatSky::onFilterSatellites()
+{
+    if (!m_filterInput) {
+        return;
+    }
+    
+    QString filterText = m_filterInput->text().trimmed();
+    
+    // 清空之前的过滤列表
+    m_filteredPRNs.clear();
+    
+    if (filterText.isEmpty()) {
+        // 如果输入为空，清除所有过滤
+        NOVA_LOG("清除卫星过滤");
+    } else {
+        // 解析空格分割的PRN列表
+        QStringList prnList = filterText.split(" ", Qt::SkipEmptyParts);
+        
+        // 添加到过滤集合
+        for (const QString& prn : prnList) {
+            QString normalizedPRN = prn.trimmed().toUpper();
+            if (!normalizedPRN.isEmpty()) {
+                m_filteredPRNs.insert(normalizedPRN);
+            }
+        }
+        
+        NOVA_LOG("应用卫星过滤，过滤掉 " << m_filteredPRNs.size() << " 颗卫星: ");
+        for (const QString& prn : m_filteredPRNs) {
+            NOVA_LOG("  - " << prn.toStdString());
+        }
+    }
+    
+    // 根据当前显示模式重新显示数据
+    if (m_showTrajectory) {
+        // 轨迹显示模式：重新加载轨迹
+        loadAllSatelliteTrajectories();
+    } else {
+        // 单历元显示模式：重新显示当前历元
+        displayCurrentEpoch();
+    }
+}
+
 // 显示当前历元的卫星数据
 void SatSky::displayCurrentEpoch()
 {
@@ -422,8 +512,8 @@ void SatSky::displayCurrentEpoch()
         else if (systemPrefix == "E" && m_showGAL) shouldDisplay = true;
         else if (systemPrefix == "R" && m_showGLO) shouldDisplay = true;
         
-        // 如果卫星系统被选中，则显示该卫星
-        if (shouldDisplay) {
+        // 新增：根据PRN过滤
+        if (shouldDisplay && !m_filteredPRNs.contains(prnStr)) {
             // 获取国旗图片路径
             QString flagPath = getFlagByPRN(prnStr);
             
@@ -436,11 +526,13 @@ void SatSky::displayCurrentEpoch()
     // 更新时间信息显示
     if (m_timeInfoLabel) {
         QString timeStr = QString::fromStdString(tsToStr(currentTimestamp));
-        QString timeInfo = QString("当前历元: %1/%2\n时间: %3\n可见卫星: %4")
+        QString filterInfo = m_filteredPRNs.isEmpty() ? "" : QString("\n过滤卫星: %1").arg(m_filteredPRNs.size());
+        QString timeInfo = QString("当前历元: %1/%2\n时间: %3\n可见卫星: %4%5")
             .arg(m_currentEpochIndex + 1)
             .arg(timeList.size())
             .arg(timeStr)
-            .arg(displayedSatellites);
+            .arg(displayedSatellites)
+            .arg(filterInfo);
         m_timeInfoLabel->setText(timeInfo);
     }
     
@@ -764,6 +856,11 @@ void SatSky::loadAllSatelliteTrajectories()
                 continue; // 跳过不显示的卫星系统
             }
             
+            // 新增：根据PRN过滤
+            if (m_filteredPRNs.contains(satelliteName)) {
+                continue; // 跳过被过滤的卫星
+            }
+            
             double az = satellite.second.first;
             double el = satellite.second.second;
             
@@ -793,9 +890,11 @@ void SatSky::loadAllSatelliteTrajectories()
     
     // 更新时间信息显示为轨迹模式
     if (m_timeInfoLabel) {
-        QString timeInfo = QString("轨迹显示模式\n显示卫星数: %1\n总轨迹点数: %2")
+        QString filterInfo = m_filteredPRNs.isEmpty() ? "" : QString("\n过滤卫星: %1").arg(m_filteredPRNs.size());
+        QString timeInfo = QString("轨迹显示模式\n显示卫星数: %1\n总轨迹点数: %2%3")
             .arg(visibleSatelliteCount)
-            .arg(totalTrajectoryPoints);
+            .arg(totalTrajectoryPoints)
+            .arg(filterInfo);
         m_timeInfoLabel->setText(timeInfo);
     }
     

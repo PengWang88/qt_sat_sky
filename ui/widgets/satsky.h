@@ -10,6 +10,7 @@
 #include <QCheckBox>
 #include <QGroupBox>
 #include <QIntValidator>
+#include <QSet>
 #include "utils/azel.h"
 
 class PolarPlotWidget;
@@ -32,6 +33,7 @@ private slots:
     void onSatelliteSystemToggled();
     void onToggleTrajectory();
     void onExportImage();
+    void onFilterSatellites(); // 新增：卫星过滤槽函数
 
 private:
     void setupUI();
@@ -67,4 +69,9 @@ private:
     // 轨迹显示相关
     bool m_showTrajectory;       // 是否显示所有卫星轨迹
     QPushButton *m_trajectoryButton; // 轨迹显示按钮
+    
+    // 卫星过滤相关
+    QSet<QString> m_filteredPRNs; // 被过滤的卫星PRN集合
+    QLineEdit *m_filterInput;     // 过滤输入框
+    QPushButton *m_filterButton;  // 过滤按钮
 };
